@@ -95,6 +95,16 @@ module.exports = {
       "message": "tar -xf TensorRT.zip"
     }
   }, {
+    "when": "{{gpu === 'nvidia' && platform === 'win32'}}",
+    method: "shell.run",
+    params: {
+      "path": "app",
+      "message": [
+        "echo 'Setting up TensorRT PATH...'",
+        "for /d %i in (TensorRT*) do set PATH=%CD%\\%i\\lib;%PATH%"
+      ]
+    }
+  }, {
     method: "shell.run",
     params: {
       venv: "env",
@@ -102,7 +112,6 @@ module.exports = {
       message: [
         "echo 'Installing framework support libraries...'",
         "{{platform === 'darwin' ? 'uv pip install tensorflow>=2.10.0' : 'uv pip install tensorflow-cpu>=2.10.0'}}",
-        "{{platform === 'win32' ? 'for /d %i in (TensorRT*) do set PATH=%CD%\\%i\\lib;%PATH%' : ''}}",
         "{{platform === 'win32' ? 'uv pip install torch-tensorrt --index-url https://download.pytorch.org/whl/cu128 --no-deps' : 'uv pip install torch-tensorrt'}}"
       ],
     }
@@ -127,6 +136,29 @@ module.exports = {
       ],
     }
   }, {
+    "when": "{{!exists('app/DataDesigner')}}",
+    method: "shell.run",
+    params: {
+      path: "app",
+      message: [
+        "echo 'Cloning DataDesigner for synthetic data pipeline...'",
+        ":loop",
+        "git clone --depth 1 https://github.com/NVIDIA-NeMo/DataDesigner DataDesigner && goto :next || echo 'Clone failed, retrying in 5 seconds...' && timeout /t 5 && goto :loop",
+        ":next"
+      ]
+    }
+  }, {
+    method: "shell.run",
+    params: {
+      venv: "env",
+      path: "app",
+      message: [
+        "echo 'Installing synthetic data pipeline dependencies...'",
+        "uv pip install data-designer==0.4.0 openai>=1.0.0 pydantic>=2.0.0 pandas>=1.5.0 jinja2>=3.0.0 requests>=2.32.0 aiohttp>=3.8.0",
+      ],
+    }
+  }, {
+    "when": "{{!exists('app/bert_models/google_research_bert')}}",
     method: "shell.run",
     params: {
       venv: "env",
@@ -140,6 +172,7 @@ module.exports = {
       ]
     }
   }, {
+    "when": "{{!exists('app/download_bert_models.py') || !exists('app/bert_models/bert_large/bert-large-uncased/bert_config.json')}}",
     method: "shell.run",
     params: {
       venv: "env",
@@ -150,6 +183,7 @@ module.exports = {
       ]
     }
   }, {
+    "when": "{{!exists('app/download_models.py') || !exists('app/models/')}}",
     method: "shell.run",
     params: {
       venv: "env",
@@ -178,6 +212,15 @@ module.exports = {
         xformers: false,
         triton: true
       }
+    }
+  }, {
+    method: "shell.run",
+    params: {
+      venv: "env",
+      path: "app",
+      message: [
+        "uv pip install huggingface-hub>=0.34.0,<1.0"
+      ]
     }
   }, {
     method: "notify",

@@ -3,6 +3,15 @@ module.exports = {
     run: [{
       method: "shell.run",
       params: {
+        venv: "env",
+        path: "app",
+        message: [
+          "uv pip install \"huggingface-hub<1.0\" --force-reinstall",
+        ]
+      }
+    }, {
+      method: "shell.run",
+      params: {
         path: "app",
         venv: "env",
         env: {

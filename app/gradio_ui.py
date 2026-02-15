@@ -17,6 +17,12 @@ from settings.app_settings import (
     GRADIO_DESCRIPTION,
 )
 
+# Import compatibility patch for huggingface_hub
+try:
+    import huggingface_hub_compat
+except ImportError:
+    huggingface_hub_compat = None
+
 # New import for BERT distillation and Quantization
 from run_distillation import run_distillation_pipeline
 from registry import STRATEGY_REGISTRY
@@ -27,6 +33,7 @@ from convert_onnx import convert_onnx_fp16, convert_onnx_int8
 from convert_pytorch import convert_pytorch_fp16, convert_pytorch_bf16
 from convert_tensorrt import convert_tensorrt
 from convert_openvino import convert_openvino
+from synthetic_data_pipeline import run_synthetic_data_pipeline
 
 def create_theme():
     """Create a custom dark theme with gradient background."""
@@ -408,6 +415,54 @@ def run_openvino_conversion_process(model_path, progress=gr.Progress()):
         return log_output.log(""), gr.update(visible=False)
 
 
+def run_synthetic_data_process(provider, api_key, base_url, model_name, num_records, output_dir, min_completeness, min_accuracy, progress=gr.Progress()):
+    """Wrapper for running the synthetic data pipeline from Gradio."""
+    log_output = LogOutput()
+
+    def log_fn(msg: str):
+        log_output.log(msg)
+        progress(0.5, desc=msg)
+
+    try:
+        if provider == "openrouter":
+            if not api_key or not api_key.strip():
+                return "ERROR: OpenRouter API Key is required for OpenRouter provider."
+
+            if not api_key.startswith("sk-or-v1-"):
+                return "ERROR: Invalid OpenRouter API Key format. Should start with 'sk-or-v1-'"
+        else:  # Local LLM providers
+            if not base_url or not base_url.strip():
+                return f"ERROR: Base URL is required for {provider} provider."
+
+        dataset, output_path = run_synthetic_data_pipeline(
+            api_key=api_key.strip() if api_key else None,
+            provider=provider,
+            base_url=base_url.strip() if base_url else None,
+            model_name=model_name.strip() if model_name else None,
+            num_records=int(num_records),
+            output_dir=output_dir.strip() if output_dir else "synthetic_data_output",
+            min_completeness=min_completeness,
+            min_accuracy=min_accuracy,
+            log_fn=log_fn
+        )
+        
+        if dataset is not None and output_path:
+            log_output.log(f"\n✓ Synthetic dataset generated successfully!")
+            log_output.log(f"✓ Dataset saved to: {output_path}")
+            log_output.log(f"✓ Total records generated: {len(dataset)}")
+            log_output.log("\n=== SYNTHETIC DATA PIPELINE SUCCESS ===")
+            return log_output.log(""), gr.update(value=output_path, visible=True)
+        else:
+            return log_output.log("Failed to generate synthetic dataset"), gr.update(visible=False)
+
+    except Exception as e:
+        error_msg = f"ERROR: {str(e)}"
+        log_output.log(error_msg)
+        import traceback
+        log_output.log(traceback.format_exc())
+        return log_output.log(""), gr.update(visible=False)
+
+
 def get_device_info():
     """Get current device information for display."""
     device_manager = get_device_manager()
@@ -756,6 +811,125 @@ def create_ui():
                     fn=run_quantization_process,
                     inputs=[quant_model_id, quant_level_choice],
                     outputs=[quant_log_output, quant_download]
+                )
+
+            with gr.TabItem("🧪 Synthetic Data Pipeline"):
+                gr.Markdown("## 🧪 Synthetic Data & Distillation Pipeline")
+                gr.Markdown(
+                    "Generate high-quality, domain-specific synthetic datasets using NVIDIA NeMo Data Designer "
+                    "and OpenRouter distillable endpoints. Create license-safe datasets ready for model distillation "
+                    "and fine-tuning workflows."
+                )
+                
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        gr.Markdown("### � LLM Provider Selection")
+                        llm_provider = gr.Dropdown(
+                            choices=["openrouter", "ollama", "lm_studio", "custom"],
+                            value="openrouter",
+                            label="LLM Provider",
+                            info="Choose between OpenRouter (cloud) or local LLM servers"
+                        )
+                        
+                        with gr.Group(visible=True) as openrouter_group:
+                            openrouter_api_key = gr.Textbox(
+                                label="OpenRouter API Key",
+                                placeholder="sk-or-v1-...",
+                                type="password",
+                                info="Get your API key from https://openrouter.ai/keys"
+                            )
+                        
+                        with gr.Group(visible=False) as local_llm_group:
+                            local_base_url = gr.Textbox(
+                                label="Local LLM Server URL",
+                                placeholder="http://localhost:11434",
+                                info="URL for your local LLM server"
+                            )
+                            
+                            local_model_name = gr.Textbox(
+                                label="Model Name (Optional)",
+                                placeholder="Leave empty to auto-detect",
+                                info="Specific model to use, or leave empty for first available"
+                            )
+                        
+                        gr.Markdown("### 📊 Dataset Configuration")
+                        num_records = gr.Slider(
+                            minimum=10,
+                            maximum=1000,
+                            value=100,
+                            step=10,
+                            label="Number of Records to Generate",
+                            info="More records = longer processing time"
+                        )
+                        
+                        output_directory = gr.Textbox(
+                            label="Output Directory",
+                            value="synthetic_data_output",
+                            placeholder="Directory name for generated datasets",
+                            info="Where to save generated CSV files"
+                        )
+                    
+                    with gr.Column(scale=2):
+                        gr.Markdown("### 🎯 Quality Filtering")
+                        min_completeness = gr.Dropdown(
+                            choices=["Incomplete", "PartiallyComplete", "Complete"],
+                            value="PartiallyComplete",
+                            label="Minimum Completeness Score",
+                            info="Filter for answer completeness"
+                        )
+                        
+                        min_accuracy = gr.Dropdown(
+                            choices=["Inaccurate", "PartiallyAccurate", "Accurate"],
+                            value="PartiallyAccurate",
+                            label="Minimum Accuracy Score",
+                            info="Filter for factual accuracy"
+                        )
+                        
+                        gr.Markdown("### ℹ️ Provider Information")
+                        gr.Markdown(
+                            """
+                            **OpenRouter**: Cloud-based, license-safe distillable endpoints
+                            - Cost: ~$0.10 per 100 records
+                            - Requires API key
+                            - High quality models (Nemotron 3 Nano)
+                            
+                            **Ollama**: Local LLM server
+                            - URL: http://localhost:11434
+                            - Free (local hardware required)
+                            - Models: Llama2, Mistral, CodeLlama, etc.
+                            
+                            **LM Studio**: Local LLM server
+                            - URL: http://localhost:1234/v1
+                            - Free (local hardware required)
+                            - OpenAI-compatible API
+                            
+                            **Custom**: Any OpenAI-compatible server
+                            - Configure URL as needed
+                            - Works with most local LLM setups
+                            """
+                        )
+                
+                def update_provider_visibility(provider):
+                    if provider == "openrouter":
+                        return gr.update(visible=True), gr.update(visible=False)
+                    else:
+                        return gr.update(visible=False), gr.update(visible=True)
+                
+                llm_provider.change(
+                    fn=update_provider_visibility,
+                    inputs=[llm_provider],
+                    outputs=[openrouter_group, local_llm_group]
+                )
+                
+                synthetic_run_btn = gr.Button("🚀 Generate Synthetic Dataset", variant="primary")
+                
+                synthetic_download = gr.File(label="Download Generated Dataset", visible=False)
+                synthetic_log_output = gr.Textbox(label="Pipeline Log", lines=20, interactive=False)
+                
+                synthetic_run_btn.click(
+                    fn=run_synthetic_data_process,
+                    inputs=[llm_provider, openrouter_api_key, local_base_url, local_model_name, num_records, output_directory, min_completeness, min_accuracy],
+                    outputs=[synthetic_log_output, synthetic_download]
                 )
 
             with gr.TabItem("📂 Browser"):
