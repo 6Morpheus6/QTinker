@@ -37,6 +37,8 @@ from convert_pytorch import convert_pytorch_fp16, convert_pytorch_bf16
 from convert_tensorrt import convert_tensorrt
 from convert_openvino import convert_openvino
 from synthetic_data_pipeline import run_synthetic_data_pipeline
+from quantize_pytorch import quantize_pytorch_model
+from distill_pytorch import run_pytorch_distillation
 
 def create_theme():
     """Create a custom dark theme with gradient background."""
@@ -706,6 +708,66 @@ def create_ui():
                     outputs=[bert_log_output]
                 )
 
+            with gr.TabItem("PyTorch Distillation"):
+                gr.Markdown("## PyTorch Model Distillation")
+                gr.Markdown(
+                    "Distill knowledge from a teacher model to a student model using various strategies."
+                )
+                with gr.Row():
+                    pt_distill_teacher_path = gr.Textbox(label="Teacher Model Path", placeholder="Select path from Browser tab...")
+                with gr.Row():
+                    pt_distill_student_path = gr.Textbox(label="Student Model Path", placeholder="Select path from Browser tab...")
+                with gr.Row():
+                    pt_distill_custom_path = gr.Textbox(label="Custom Model Path (for MultiTeacherKD)", placeholder="Select path from Browser tab...")
+                with gr.Row():
+                    pt_distill_data_path = gr.File(label="Training Data (.txt file with sentences)", file_count="single", file_types=[".txt"])
+
+                pt_distill_strategy = gr.Dropdown(
+                    choices=list(STRATEGY_MAP.keys()),
+                    label="Distillation Strategy",
+                    value="LogitKD"
+                )
+                
+                pt_distill_run_btn = gr.Button("Run PyTorch Distillation", variant="primary")
+                pt_distill_log_output = gr.Textbox(label="Live Log Output", lines=20, interactive=False)
+
+                def run_pytorch_distill_process(teacher_path, student_path, custom_path, data_path, strategy, progress=gr.Progress()):
+                    log_output = LogOutput()
+                    def log_fn(msg: str):
+                        log_output.log(msg)
+                        progress(0.5, desc=msg)
+                    
+                    try:
+                        if not teacher_path or not student_path or not data_path:
+                            return "ERROR: Teacher, Student, and Data paths are required."
+
+                        output_dir = "pytorch_distilled_models"
+                        distilled_path = run_pytorch_distillation(
+                            teacher_path,
+                            student_path,
+                            data_path.name,
+                            strategy,
+                            output_dir,
+                            custom_path if custom_path else None,
+                            log_fn=log_fn
+                        )
+                        log_output.log(f"\\n=== PyTorch Distillation SUCCESS ===")
+                        log_output.log(f"Distilled model saved to: {distilled_path}")
+                        return log_output.log("")
+
+                    except Exception as e:
+                        error_msg = f"ERROR: {str(e)}"
+                        log_output.log(error_msg)
+                        import traceback
+                        log_output.log(traceback.format_exc())
+                        return log_output.log("")
+
+                pt_distill_run_btn.click(
+                    fn=run_pytorch_distill_process,
+                    inputs=[pt_distill_teacher_path, pt_distill_student_path, pt_distill_custom_path, pt_distill_data_path, pt_distill_strategy],
+                    outputs=[pt_distill_log_output]
+                )
+
             with gr.TabItem("FP16 Conversion"):
                 gr.Markdown("## Model FP16 (Half-Precision) Conversion")
                 gr.Markdown(
@@ -751,7 +813,55 @@ def create_ui():
                             inputs=[pytorch_model_path_in, pytorch_quant_type],
                             outputs=[pytorch_log_output, pytorch_download]
                         )
-            
+
+            with gr.TabItem("PyTorch PT2E Quantization"):
+                gr.Markdown("## PyTorch 2.x Post-Training Quantization")
+                gr.Markdown(
+                    "Quantize PyTorch models using the `torch.export` workflow with `torchao`."
+                    "This requires a full model file (`.pth`) and optional calibration data."
+                )
+                with gr.Row():
+                    pt_quant_model_path_in = gr.Textbox(label="Input PyTorch Model Path (.pth)", placeholder="Select a .pth model file...")
+                with gr.Row():
+                    pt_quant_calibration_in = gr.File(label="Calibration Data (.pt tensor file)", file_count="single", file_types=[".pt"])
+                
+                pt_quant_convert_btn = gr.Button("Quantize PyTorch Model", variant="primary")
+                pt_quant_download = gr.File(label="Download Quantized PyTorch Model", visible=False)
+                pt_quant_log_output = gr.Textbox(label="Quantization Log", lines=15, interactive=False)
+
+                def run_pytorch_quant_process(model_path, calib_path, progress=gr.Progress()):
+                    log_output = LogOutput()
+                    def log_fn(msg: str):
+                        log_output.log(msg)
+                        progress(0.5, desc=msg)
+                    
+                    try:
+                        if not model_path:
+                            return "ERROR: Model Path is required.", gr.update(visible=False)
+
+                        output_path = quantize_pytorch_model(
+                            model_path.name, 
+                            calib_path.name if calib_path else None, 
+                            None, 
+                            log_fn=log_fn
+                        )
+                        log_output.log(f"✓ Quantized PyTorch model saved to: {output_path}")
+                        log_output.log("=== PyTorch Quantization SUCCESS ===")
+                        return log_output.log(""), gr.update(value=output_path, visible=True)
+
+                    except Exception as e:
+                        error_msg = f"ERROR: {str(e)}"
+                        log_output.log(error_msg)
+                        import traceback
+                        log_output.log(traceback.format_exc())
+                        return log_output.log(""), gr.update(visible=False)
+
+                pt_quant_convert_btn.click(
+                    fn=run_pytorch_quant_process,
+                    inputs=[pt_quant_model_path_in, pt_quant_calibration_in],
+                    outputs=[pt_quant_log_output, pt_quant_download]
+                )
+
             with gr.TabItem("Hardware-Specific Conversion"):
                 gr.Markdown("## Hardware-Specific Model Conversions")
                 gr.Markdown(
@@ -1020,19 +1130,21 @@ def create_ui():
                     )
 
                 with gr.Row():
-                    agent_scan_button = gr.Button("Scan and Analyze Project", variant="primary")
+                    agent_scan_button = gr.Button("Scan Project for Models", variant="secondary")
                 
                 agent_results_df = gr.DataFrame(
                     lambda: pd.DataFrame(columns=['Type', 'Path', 'Details', 'Suggested Action']),
-                    label="Discovered Model Artifacts & Actions",
-                    interactive=True # Allow selection
+                    label="Discovered Model Artifacts",
+                    interactive=True
                 )
-                
-                selected_action_info = gr.Textbox(label="Selected Action", interactive=False)
-                
-                run_action_button = gr.Button("Run Selected Action", variant="primary", visible=False)
-                agent_log_output = gr.Textbox(label="Agent Log", lines=15, interactive=False)
 
+                with gr.Row():
+                    agent_file_selection = gr.Dropdown(label="Select a file to process", interactive=True)
+                    agent_instruction_box = gr.Textbox(label="Instructions for the Agent", placeholder="e.g., 'Quantize this model to 8-bit' or 'Tell me more about this file.'")
+
+                run_agent_button = gr.Button("Run Agent with Instructions", variant="primary")
+                agent_log_output = gr.Textbox(label="Agent Log", lines=15, interactive=False)
+                
                 # Store the full dataframe in a hidden state for access
                 df_state = gr.State()
 
@@ -1040,57 +1152,40 @@ def create_ui():
                     project_root = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
                     discovered_df = discover_models(project_root)
                     analyzed_df = analyze_artifacts(discovered_df)
-                    return analyzed_df, analyzed_df
+                    # Update the dropdown choices
+                    file_choices = analyzed_df["Path"].tolist()
+                    return analyzed_df, analyzed_df, gr.update(choices=file_choices)
 
                 agent_scan_button.click(
                     fn=handle_agent_scan_and_analyze,
                     inputs=[],
-                    outputs=[agent_results_df, df_state]
+                    outputs=[agent_results_df, df_state, agent_file_selection]
                 )
 
-                def on_select_artifact(evt: gr.SelectData, df: pd.DataFrame):
-                    if evt.index is None:
-                        return "No action selected", gr.update(visible=False)
-                    
-                    selected_row = df.iloc[evt.index[0]]
-                    action = selected_row.get("Suggested Action", "None")
-                    
-                    if action != "None":
-                        model_path = selected_row.get("Path")
-                        info_text = f"Action: '{action}' on '{model_path}'"
-                        return info_text, gr.update(visible=True)
-                    else:
-                        return "No suggested action for this item.", gr.update(visible=False)
-
-                agent_results_df.select(
-                    fn=on_select_artifact,
-                    inputs=[df_state],
-                    outputs=[selected_action_info, run_action_button]
-                )
-
-                def handle_run_action(evt: gr.SelectData, df: pd.DataFrame):
+                def handle_run_agent_instruction(selected_file, instructions):
                     log_output = LogOutput()
                     def log_fn(msg):
                         log_output.log(msg)
                     
-                    if evt.index is None:
-                        return "ERROR: No item selected."
+                    if not selected_file or not instructions:
+                        return "ERROR: Please select a file and provide instructions."
 
-                    selected_row = df.iloc[evt.index[0]]
-                    model_path = selected_row.get("Path")
-                    action = selected_row.get("Suggested Action")
-
-                    # The path in the df is relative to the project root
                     project_root = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
-                    absolute_model_path = os.path.join(project_root, model_path)
+                    absolute_model_path = os.path.join(project_root, selected_file)
 
-                    result = execute_agent_action(absolute_model_path, action, log_fn)
-                    log_fn(f"Agent execution finished. Result: {result}")
+                    # This will now be a more generic function
+                    result = execute_agent_action(
+                        model_path=absolute_model_path, 
+                        action=None, # Action is now determined by LLM
+                        log_fn=log_fn,
+                        user_prompt=instructions
+                    )
+                    log_fn(f"Agent execution finished.")
                     return log_output.log("")
 
-                run_action_button.click(
-                    fn=handle_run_action,
-                    inputs=[agent_results_df, df_state],
+                run_agent_button.click(
+                    fn=handle_run_agent_instruction,
+                    inputs=[agent_file_selection, agent_instruction_box],
                     outputs=[agent_log_output]
                 )
 

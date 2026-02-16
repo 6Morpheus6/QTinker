@@ -10,6 +10,7 @@ safetensors>=0.5.0
 gguf>=0.17.0
 bitsandbytes>=0.45.0
 optimum[onnx,exporters]>=1.21.0
+executorch-nightly
 
 # Advanced Quantization (Post-training & QAT)
 auto-gptq>=0.7.1

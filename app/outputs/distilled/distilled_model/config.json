@@ -39,7 +39,7 @@
   "ctc_loss_reduction": "sum",
   "ctc_zero_infinity": false,
   "do_stable_layer_norm": false,
-  "dtype": "float32",
+  "dtype": "float16",
   "eos_token_id": 2,
   "feat_extract_activation": "gelu",
   "feat_extract_norm": "group",

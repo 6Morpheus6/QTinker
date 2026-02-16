@@ -101,28 +101,86 @@ def analyze_artifacts(df):
     return df
 
 
-def execute_agent_action(model_path, action, log_fn):
+def execute_agent_action(model_path, action, log_fn, user_prompt=None):
     """
-    Executes a suggested action from the agent.
+    Executes a suggested action from the agent, or a custom action from a user prompt.
     """
     from gguf_quantizer import quantize_to_gguf
     from convert_onnx import convert_to_onnx_from_diffusers
+    from core.local_llm import get_local_llm_client
+    
+    # Load agent's LLM configuration
+    try:
+        from gradio_ui import load_config
+        config = load_config().get("agent_llm", {})
+        llm_client = get_local_llm_client(
+            provider=config.get("provider"),
+            api_key=config.get("api_key"),
+            # Assuming OpenAI compatible structure for local LLMs for now
+            base_url=config.get("endpoint_url"),
+            model_name=config.get("model_name") 
+        )
+    except (ImportError, FileNotFoundError):
+        llm_client = None
+        log_fn("Warning: Could not load LLM client configuration.")
 
+    # If there's a user prompt, the agent's goal is to respond to it.
+    if user_prompt:
+        log_fn(f"INFO: Agent received instructions: '{user_prompt}' for model: '{model_path}'")
+        if not llm_client:
+            log_fn("ERROR: Cannot process instructions without a configured LLM.")
+            return "LLM not configured. Please set it up in the Agent tab."
+
+        # Construct a prompt for the LLM
+        system_prompt = (
+            "You are an expert AI assistant specializing in model optimization. "
+            "Your task is to analyze user requests regarding a specific model file and determine the appropriate action. "
+            "Available actions are: 'quantize', 'distill', 'analyze', 'none'. "
+            "Respond with a single JSON object containing 'action' and 'parameters'. "
+            "For 'quantize', parameters can be {'quant_type': '8-bit' | '4-bit' | 'FP16'}. "
+            "For 'distill', you need a 'teacher_model_path'. "
+            "For 'analyze', provide a 'description' of the model. "
+            "If no action is appropriate, use 'none'."
+        )
+        full_prompt = f"{system_prompt}\\n\\nUser instruction: '{user_prompt}'\\nModel path: '{model_path}'\\n\\nJSON Response:"
+        
+        log_fn("INFO: Sending instructions to LLM for analysis...")
+        response_text = llm_client.generate(full_prompt)
+        log_fn(f"LLM Response: {response_text}")
+
+        try:
+            response_json = json.loads(response_text)
+            action_from_llm = response_json.get("action", "none")
+            params = response_json.get("parameters", {})
+
+            if action_from_llm == "quantize":
+                quant_type = params.get("quant_type", "8-bit") # Default
+                log_fn(f"INFO: LLM decided to quantize with type: {quant_type}")
+                # This needs a generic quantization function.
+                # For now, we'll log it.
+                return f"Agent decided to quantize the model to {quant_type}. Implementation pending."
+            
+            elif action_from_llm == "analyze":
+                return params.get("description", "Analysis complete.")
+
+            else: # none or other actions
+                return "Agent acknowledged the instruction. No specific action taken."
+
+        except json.JSONDecodeError:
+            log_fn("Warning: LLM did not return valid JSON. Treating as a regular response.")
+            return response_text
+
+    # Original functionality: Execute a pre-defined action
     log_fn(f"INFO: Received action '{action}' for model at '{model_path}'.")
-
     try:
         if action == "Quantize to GGUF":
             log_fn("INFO: Starting GGUF quantization...")
-            # Assuming the gguf_quantizer can handle this.
-            # We might need to adjust what `quantize_to_gguf` expects.
-            # For now, let's assume it takes the path and a log function.
             output_path = quantize_to_gguf(model_path, log_fn=log_fn)
             log_fn(f"SUCCESS: Quantized model saved to {output_path}")
             return f"Quantization successful. See logs for details."
 
         elif action == "Convert to ONNX":
             log_fn("INFO: Starting ONNX conversion from Diffusers pipeline...")
-            # The model_path for a Diffusers pipeline is the directory.
             output_path = convert_to_onnx_from_diffusers(model_path, log_fn=log_fn)
             log_fn(f"SUCCESS: ONNX model saved to {output_path}")
             return f"ONNX conversion successful. See logs for details."

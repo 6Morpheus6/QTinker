@@ -46,6 +46,14 @@ A modern, production-ready application for distilling and quantizing language mo
 - ✨ **Robust Model Saving**: Automatically handles `safetensors` errors with fallbacks to `.bin` format and CPU-based saving to prevent crashes with quantized or modified models.
 - 📂 **Integrated File Browser**: A full-featured, in-app file and folder browser replaces native system dialogs, allowing for intuitive navigation and selection of whole model directories.
 
+## Recent Changes
+
+*   **Refactored Distillation and Quantization**: Introduced new dedicated scripts `distill_pytorch.py` and `quantize_pytorch.py` for clearer and more modular distillation and quantization workflows.
+*   **Enhanced AI Agent**: Updated the `agent.py` with new capabilities for project analysis and optimization suggestions.
+*   **UI Improvements**: Made updates to the Gradio UI in `gradio_ui.py` for better user experience.
+*   **Dependency Updates**: Updated `requirements.txt` with new packages.
+*   **Installation Script**: Modified `install.js` to streamline the setup process.
+
 ## Project Structure
 
 ```

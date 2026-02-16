@@ -1,3 +1,7 @@
+agent_llm:
+  api_key: ''
+  endpoint_url: http://192.168.1.134:1234
+  provider: LM Studio (Local)
 distillation:
   alpha: 0.5
   batch_size: 4

@@ -23,7 +23,8 @@ module.exports = {
       venv: "env",
       path: "app",
       message: [
-        "uv pip install --no-deps -r requirements.txt"
+        "uv pip install --no-deps -r requirements.txt",
+        "uv pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121"
       ],
     }
   }, {
