@@ -5,6 +5,9 @@ import gradio as gr
 import torch
 import yaml
 from pathlib import Path
+import os
+import pandas as pd
+from agent import discover_models, analyze_artifacts, execute_agent_action
 from core.logic import run_pipeline
 from core.device_manager import get_device_manager
 from core.local_llm import get_local_llm_client
@@ -528,6 +531,13 @@ css = """
     
     /* Buttons */
     button, .lg.primary, .lg.secondary, .sm.primary, .sm.secondary, .primary { color: red !important; } 
+
+    /* --- TABS SCROLLING --- */
+    .tab-buttons {
+        overflow-x: auto !important;
+        white-space: nowrap !important;
+        flex-wrap: nowrap !important;
+    }
     """
 
 def create_ui():
@@ -930,6 +940,158 @@ def create_ui():
                     fn=run_synthetic_data_process,
                     inputs=[llm_provider, openrouter_api_key, local_base_url, local_model_name, num_records, output_directory, min_completeness, min_accuracy],
                     outputs=[synthetic_log_output, synthetic_download]
+                )
+
+            with gr.TabItem("🤖 Agent"):
+                gr.Markdown("## 🤖 AI Agent: Project Inspector")
+                gr.Markdown("An intelligent agent to scan, analyze, and manage your local AI models and project artifacts.")
+
+                with gr.Accordion("LLM Configuration", open=True):
+                    agent_llm_config = config.get("agent_llm", {})
+                    
+                    agent_llm_provider = gr.Dropdown(
+                        ["None", "Ollama (Local)", "LM Studio (Local)", "OpenAI", "Google Gemini"],
+                        label="LLM Provider for Agent Reasoning",
+                        value=agent_llm_config.get("provider", "None"),
+                        info="Select the LLM the agent will use for analysis."
+                    )
+
+                    agent_api_key = gr.Textbox(
+                        label="API Key", 
+                        placeholder="Enter your API key...",
+                        value=agent_llm_config.get("api_key", ""),
+                        visible=(agent_llm_config.get("provider", "None") in ["OpenAI", "Google Gemini"])
+                    )
+                    
+                    # Determine initial visibility and value for endpoint URL
+                    initial_provider = agent_llm_config.get("provider", "None")
+                    initial_endpoint_visible = initial_provider in ["Ollama (Local)", "LM Studio (Local)"]
+                    initial_endpoint_value = agent_llm_config.get("endpoint_url", "")
+                    if not initial_endpoint_value:
+                        if initial_provider == "Ollama (Local)":
+                            initial_endpoint_value = "http://localhost:11434"
+                        elif initial_provider == "LM Studio (Local)":
+                             initial_endpoint_value = "http://localhost:1234/v1"
+
+                    agent_endpoint_url = gr.Textbox(
+                        label="Endpoint URL", 
+                        placeholder="e.g., http://localhost:11434",
+                        value=initial_endpoint_value,
+                        visible=initial_endpoint_visible
+                    )
+
+                    save_agent_config_button = gr.Button("Save LLM Configuration")
+                    config_save_status = gr.Markdown()
+
+                    def update_provider_fields(provider):
+                        is_cloud = provider in ["OpenAI", "Google Gemini"]
+                        is_local = provider in ["Ollama (Local)", "LM Studio (Local)"]
+                        
+                        endpoint_update_params = {"visible": is_local}
+                        if provider == "Ollama (Local)":
+                            endpoint_update_params["placeholder"] = "http://localhost:11434"
+                            endpoint_update_params["value"] = "http://localhost:11434"
+                        elif provider == "LM Studio (Local)":
+                            endpoint_update_params["placeholder"] = "http://localhost:1234/v1"
+                            endpoint_update_params["value"] = "http://localhost:1234/v1"
+
+                        return gr.update(visible=is_cloud), gr.update(**endpoint_update_params)
+
+                    agent_llm_provider.change(
+                        fn=update_provider_fields,
+                        inputs=[agent_llm_provider],
+                        outputs=[agent_api_key, agent_endpoint_url]
+                    )
+
+                    def save_agent_config(provider, api_key, endpoint_url):
+                        current_config = load_config()
+                        current_config["agent_llm"] = {
+                            "provider": provider,
+                            "api_key": api_key,
+                            "endpoint_url": endpoint_url
+                        }
+                        save_config(current_config)
+                        return "✅ Configuration saved successfully."
+
+                    save_agent_config_button.click(
+                        fn=save_agent_config,
+                        inputs=[agent_llm_provider, agent_api_key, agent_endpoint_url],
+                        outputs=[config_save_status]
+                    )
+
+                with gr.Row():
+                    agent_scan_button = gr.Button("Scan and Analyze Project", variant="primary")
+                
+                agent_results_df = gr.DataFrame(
+                    lambda: pd.DataFrame(columns=['Type', 'Path', 'Details', 'Suggested Action']),
+                    label="Discovered Model Artifacts & Actions",
+                    interactive=True # Allow selection
+                )
+                
+                selected_action_info = gr.Textbox(label="Selected Action", interactive=False)
+                
+                run_action_button = gr.Button("Run Selected Action", variant="primary", visible=False)
+                agent_log_output = gr.Textbox(label="Agent Log", lines=15, interactive=False)
+
+                # Store the full dataframe in a hidden state for access
+                df_state = gr.State()
+
+                def handle_agent_scan_and_analyze():
+                    project_root = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+                    discovered_df = discover_models(project_root)
+                    analyzed_df = analyze_artifacts(discovered_df)
+                    return analyzed_df, analyzed_df
+
+                agent_scan_button.click(
+                    fn=handle_agent_scan_and_analyze,
+                    inputs=[],
+                    outputs=[agent_results_df, df_state]
+                )
+
+                def on_select_artifact(evt: gr.SelectData, df: pd.DataFrame):
+                    if evt.index is None:
+                        return "No action selected", gr.update(visible=False)
+                    
+                    selected_row = df.iloc[evt.index[0]]
+                    action = selected_row.get("Suggested Action", "None")
+                    
+                    if action != "None":
+                        model_path = selected_row.get("Path")
+                        info_text = f"Action: '{action}' on '{model_path}'"
+                        return info_text, gr.update(visible=True)
+                    else:
+                        return "No suggested action for this item.", gr.update(visible=False)
+
+                agent_results_df.select(
+                    fn=on_select_artifact,
+                    inputs=[df_state],
+                    outputs=[selected_action_info, run_action_button]
+                )
+
+                def handle_run_action(evt: gr.SelectData, df: pd.DataFrame):
+                    log_output = LogOutput()
+                    def log_fn(msg):
+                        log_output.log(msg)
+                    
+                    if evt.index is None:
+                        return "ERROR: No item selected."
+
+                    selected_row = df.iloc[evt.index[0]]
+                    model_path = selected_row.get("Path")
+                    action = selected_row.get("Suggested Action")
+
+                    # The path in the df is relative to the project root
+                    project_root = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+                    absolute_model_path = os.path.join(project_root, model_path)
+
+                    result = execute_agent_action(absolute_model_path, action, log_fn)
+                    log_fn(f"Agent execution finished. Result: {result}")
+                    return log_output.log("")
+
+                run_action_button.click(
+                    fn=handle_run_action,
+                    inputs=[agent_results_df, df_state],
+                    outputs=[agent_log_output]
                 )
 
             with gr.TabItem("📂 Browser"):

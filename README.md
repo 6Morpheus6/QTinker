@@ -4,6 +4,7 @@ A modern, production-ready application for distilling and quantizing language mo
 
 ## Features
 
+- 🤖 **AI Agent: Project Inspector**: An intelligent agent that scans your project to discover all AI models and artifacts. It analyzes them to suggest and execute optimizations like quantization or format conversion, streamlining your workflow.
 - 🎯 **Flexible Model Loading**: Support for HuggingFace models, Stable Diffusion models, and PyTorch checkpoints
 - 🖼️ **Stable Diffusion & Diffusers Support**: Full support for all SD models (1.5, 2.x, SDXL) and other diffusers models
   - Complete pipeline loading (model_index.json)
