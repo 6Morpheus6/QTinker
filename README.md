@@ -627,7 +627,24 @@ tokenizer = AutoTokenizer.from_pretrained("outputs/distilled/model_name")
 ## Pinokio Launcher Scripts
 
 QTinker is fully integrated with Pinokio for easy one-click operations:
+### Newly Supported LLM Providers
 
+The AI Agent now supports a comprehensive range of both open-source and closed-source LLM providers, allowing for greater flexibility in your workflows.
+
+**Open-Source & Local Providers:**
+- **Local LLM Servers:** LM Studio (Local), Ollama (Local)
+- **Frameworks:** LangChain, LlamaIndex, Flowise, LlamaIndex, Jan, FastChat
+- **Agents & Tools:** openclaw, OpenHands, AutoGen, Open Interpreter, Lobe Chat, OpenDevin, MetaGPT, PrivateGPT, cal.ai, mem0, AgentGPT, Vibe Kanban, SuperAGI, ChatDev, Camel, OpenAGI
+
+**Major Closed-Source LLM APIs:**
+- **OpenAI:** GPT-5.2, GPT-5.1, GPT-4o, GPT-4.1, GPT-4 Turbo, GPT-4, and GPT-3.5 series
+- **Anthropic:** Claude 3 (Opus, Sonnet, Haiku), and Claude 2 series
+- **Google:** Gemini (Ultra, Pro, Flash), PaLM 2, and LaMDA
+- **Microsoft:** Phi-3
+- **Cohere:** Command R+, Command X, Command Light
+- **Other Providers:** Amazon Titan, Mistral Large, Inflection Pi, xAI Grok series, Baidu ERNIE, Alibaba Qwen, Tencent Hunyuan, and Huawei Pangu
+
+This expanded list enables the AI Agent to leverage a wide array of state-of-the-art models for its analysis and execution tasks.
 ### Available Commands
 
 - **Install**: Automatically sets up Python environment and installs dependencies
