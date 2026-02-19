@@ -204,6 +204,16 @@ module.exports = {
       ]
     }
   }, {
+    method: "shell.run",
+    params: {
+      venv: "env",
+      path: "app",
+      message: [
+        "echo 'Installing executorch for PyTorch 2.x quantization...'",
+        "uv pip install executorch"
+      ]
+    }
+  }, {
     method: "script.start",
     params: {
       uri: "torch.js",

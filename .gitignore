@@ -49,8 +49,6 @@ Thumbs.db
 *.safetensors
 *.ckpt
 
-# Ignore entire app folder (should not be in repository)
-app/
 app/bert_models/
 app/bert_distilled_models/
 
