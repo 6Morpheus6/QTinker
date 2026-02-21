@@ -3,7 +3,7 @@ module.exports = {
     method: "shell.run",
     params: {
       message: [
-        "git clone https://github.com/manat0912/QTinker.git .",
+        "git clone https://github.com/manat0912/QTinker-App-Repo.git app",
       ]
     }
   }, {
