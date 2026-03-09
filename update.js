@@ -20,7 +20,7 @@ module.exports = {
       venv: "env",
       path: "app",
       message: [
-        "uv pip install --upgrade -r requirements.txt"
+        "uv pip install -r requirements.txt"
       ]
     }
   }]
